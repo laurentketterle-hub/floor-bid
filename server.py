@@ -346,16 +346,20 @@ class Handler(BaseHTTPRequestHandler):
                     bid = int(d.get("bid"))
                 except Exception:
                     return self._send(400, {"error": "bid must be an integer"})
+                if seat in g["bids"]:
+                    return self._send(409, {"error": "you already bid this round",
+                                            "your_bid": g["bids"][seat]})
                 if bid < 0 or bid > g["seats"][seat]["credits"]:
                     return self._send(400, {"error": "bid out of range",
                                             "max": g["seats"][seat]["credits"]})
                 g["bids"][seat] = bid
                 g["log"].append("%s bid %d." % (g["seats"][seat]["name"], bid))
                 seated = [i for i, s in enumerate(g["seats"]) if s["name"]]
-                if len(g["bids"]) >= len(seated):
+                waiting = max(0, len(seated) - len(g["bids"]))
+                if waiting == 0:
                     resolve(g)
                 return self._send(200, {"accepted": True, "bid": bid,
-                                        "waiting_for": len(seated) - len(g["bids"]),
+                                        "waiting_for": waiting,
                                         "state": public(g, seat)})
         return self._send(404, {"error": "not found"})
 
