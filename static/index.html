@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f4ede1'/%3E%3Ctext x='16' y='23' font-size='20' font-weight='700' text-anchor='middle' fill='%23e74079'%3E%E2%82%AC%3C/text%3E%3C/svg%3E">
+<title>Floor Bid — a six-lot auction game</title>
+<style>
+  :root{--ink:#1b1712;--paper:#f4ede1;--pink:#e74079;--green:#10542e;--gold:#c8961e;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+  main{max-width:640px;margin:0 auto;padding:20px 16px 48px}
+  h1{font-size:30px;line-height:1.05;margin:8px 0 4px;letter-spacing:-.5px}
+  h1 span{color:var(--pink)}
+  .sub{color:#5d544a;margin:0 0 18px;font-size:14px}
+  .card{background:#fffdf8;border:2px solid var(--ink);border-radius:14px;padding:16px;margin:12px 0;box-shadow:4px 4px 0 rgba(27,23,18,.14)}
+  label{display:block;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#6b6156;margin:0 0 6px}
+  input{width:100%;padding:12px;border:2px solid var(--ink);border-radius:10px;font:inherit;background:#fff}
+  button{font:inherit;font-weight:600;border:2px solid var(--ink);border-radius:10px;background:var(--green);color:#fff;padding:12px 16px;cursor:pointer}
+  button.alt{background:var(--paper);color:var(--ink)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1 1 140px}
+  .bids{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+  .bids button{padding:12px 0;background:#fff;color:var(--ink);font-size:18px}
+  .bids button.on{background:var(--pink);color:#fff}
+  .seats{list-style:none;padding:0;margin:0}
+  .seats li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed #d9cfc0;font-size:15px}
+  .seats li:last-child{border:0}
+  .badge{font-size:11px;text-transform:uppercase;letter-spacing:.08em;background:var(--paper);border:1px solid var(--ink);border-radius:999px;padding:1px 7px;margin-left:6px}
+  .big{font-size:44px;font-weight:700;line-height:1;margin:4px 0}
+  .lot{display:flex;align-items:baseline;gap:12px}
+  .timer{margin-left:auto;font-variant-numeric:tabular-nums;color:#6b6156}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{padding:5px 4px;border-bottom:1px dashed #d9cfc0;text-align:left}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b6156}
+  .log{font-size:12.5px;color:#5d544a;max-height:150px;overflow:auto;margin:0;padding-left:18px}
+  .notice{background:#fff3d6;border:2px solid var(--gold);border-radius:10px;padding:10px 12px;font-size:14px;margin:12px 0}
+  .win{background:#e8f6ec;border-color:var(--green)}
+  code{background:#eee5d6;padding:1px 5px;border-radius:4px;font-size:13px}
+  .hidden{display:none}
+  footer{color:#7a7167;font-size:12px;margin-top:22px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Floor <span>Bid</span></h1>
+  <p class="sub">Six lots. Twelve credits. Everyone bids at once. A match runs under ten minutes.</p>
+
+  <section id="home">
+    <div class="card">
+      <label for="name">Your name</label>
+      <input id="name" maxlength="16" placeholder="e.g. Ada" autocomplete="off">
+      <div class="row" style="margin-top:12px">
+        <button id="create">Open a table</button>
+      </div>
+    </div>
+    <div class="card">
+      <label for="code">Table code</label>
+      <input id="code" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase">
+      <div class="row" style="margin-top:12px">
+        <button id="join" class="alt">Join a table</button>
+      </div>
+    </div>
+    <div class="card">
+      <label>Rules</label>
+      <p id="rules" style="margin:0;font-size:14.5px">Loading…</p>
+      <p style="margin:10px 0 0;font-size:13.5px;color:#5d544a">Agents: see <code>README.md</code> for the JSON API (<code>GET api/state</code>, <code>POST api/bid</code>) and a sample bot.</p>
+    </div>
+  </section>
+
+  <section id="table" class="hidden">
+    <div class="card">
+      <label>Table</label>
+      <div class="lot"><span class="big" id="tcode">----</span><span class="timer" id="phase"></span></div>
+      <ul class="seats" id="seats"></ul>
+      <div class="row" style="margin-top:12px">
+        <button id="start">Start match</button>
+        <button id="share" class="alt">Copy link</button>
+      </div>
+      <div class="notice hidden" id="notice"></div>
+    </div>
+
+    <div class="card" id="bidbox">
+      <div class="lot"><div><label>Lot</label><span class="big" id="lot">–</span> <span id="lotv"></span></div><span class="timer" id="clock"></span></div>
+      <div class="row" style="margin:8px 0 4px;font-size:14px"><span>Your credits: <b id="credits">–</b></span><span>Your points: <b id="points">–</b></span></div>
+      <label style="margin-top:10px">Your secret bid</label>
+      <div class="bids" id="bids"></div>
+      <div class="row">
+        <button id="submit">Lock bid</button>
+      </div>
+      <p style="font-size:13px;color:#5d544a;margin:10px 0 0" id="status"></p>
+    </div>
+
+    <div class="card hidden" id="result">
+      <label id="resulttitle">Lot result</label>
+      <table id="resulttable"></table>
+    </div>
+
+    <div class="card">
+      <label>Match log</label>
+      <table id="history"></table>
+      <ul class="log" id="log"></ul>
+    </div>
+  </section>
+  <footer>Floor Bid · open source · bots welcome</footer>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let S = null, key = localStorage.getItem("fb_key"), code = localStorage.getItem("fb_code") || "";
+let chosen = null, lastPhase = "", timer = null;
+
+async function api(path, body){
+  const opt = body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt);
+  const t = await r.text();
+  let d = {}; try { d = JSON.parse(t); } catch(e){}
+  if(!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+  return d;
+}
+
+function showTable(on){
+  $("home").classList.toggle("hidden", on);
+  $("table").classList.toggle("hidden", !on);
+}
+
+function notice(msg){
+  const n = $("notice");
+  if(!msg){ n.classList.add("hidden"); return; }
+  n.textContent = msg; n.classList.remove("hidden");
+}
+
+function render(){
+  if(!S) return;
+  $("bidbox").classList.toggle("hidden", S.phase === "reveal" || S.phase === "over");
+  $("tcode").textContent = S.code;
+  $("phase").textContent = ({lobby:"lobby", bidding:"bidding", reveal:"reveal", over:"finished"})[S.phase] || S.phase;
+  $("seats").innerHTML = S.seats.map(s => {
+    const me = s.seat === S.your_seat ? '<span class="badge">you</span>' : '';
+    const bot = s.bot ? '<span class="badge">bot</span>' : '';
+    const bid = (S.phase === "bidding" && s.has_bid) ? ' <span class="badge">bid in</span>' : '';
+    return `<li><span>${s.empty ? "— empty seat —" : s.name}${me}${bot}${bid}</span>
+      <span><b>${s.score}</b> pts · ${s.credits} cr</span></li>`;
+  }).join("");
+  if(S.your_seat !== null && S.your_seat !== undefined){
+    $("credits").textContent = S.seats[S.your_seat].credits;
+    $("points").textContent = S.seats[S.your_seat].score;
+  }
+  const bidding = S.phase === "bidding";
+  $("start").classList.toggle("hidden", S.phase !== "lobby");
+  if(bidding){
+    $("lot").textContent = S.round + "/" + S.rounds_total;
+    $("lotv").textContent = "worth " + S.lot_value + " points";
+    $("clock").textContent = S.seconds_left + "s";
+    const max = S.seats[S.your_seat] ? S.seats[S.your_seat].credits : 0;
+    if(chosen === null || chosen > max) chosen = null;
+    $("bids").innerHTML = "";
+    for(let i=0;i<=max;i++){
+      const b = document.createElement("button");
+      b.textContent = i === 0 ? "pass" : i;
+      if(chosen === i) b.classList.add("on");
+      b.onclick = () => { chosen = i; render(); };
+      $("bids").appendChild(b);
+    }
+    const mine = S.your_bid;
+    $("submit").disabled = chosen === null || mine !== null && mine !== undefined;
+    $("status").textContent = (mine !== null && mine !== undefined)
+      ? "Bid " + mine + " locked. Waiting for the other seats…"
+      : "Highest bid wins the lot. Ties go to the player with fewer points.";
+    notice("");
+  } else if(S.phase === "reveal" && S.reveal){
+    renderResult(S.reveal);
+  } else if(S.phase === "over"){
+    renderOver();
+  } else {
+    notice("Share the code " + S.code + " — empty seats are filled by bots when you start.");
+  }
+  $("history").innerHTML = "<tr><th>Lot</th><th>Value</th><th>Bids</th><th>Winner</th></tr>" +
+    S.history.map(h => `<tr><td>${h.round}</td><td>${h.value}</td><td>${h.bids.map(b=>b.bid).join(" · ")}</td>
+      <td>${h.winner === null ? "unsold" : h.bids.find(b=>b.seat===h.winner).name + " (" + h.price + ")"}</td></tr>`).join("");
+  $("log").innerHTML = S.log.slice().reverse().map(l => `<li>${l}</li>`).join("");
+}
+
+function renderResult(h){
+  $("result").classList.remove("hidden");
+  $("resulttitle").textContent = "Lot " + h.round + " — worth " + h.value + " points";
+  const win = h.winner === null ? null : h.bids.find(b => b.seat === h.winner);
+  $("resulttable").innerHTML = "<tr><th>Seat</th><th>Bid</th></tr>" + h.bids.map(b =>
+    `<tr><td>${b.name}${b.seat === h.winner ? " ★" : ""}</td><td>${b.bid}</td></tr>`).join("") +
+    `<tr><th>Outcome</th><td>${h.winner === null ? "unsold — everyone passed" : win.name + " scores " + h.value + " for " + h.price + " credits" + (h.tie ? " (tie broken on points)" : "")}</td></tr>`;
+}
+
+function renderOver(){
+  $("result").classList.remove("hidden");
+  $("resulttitle").textContent = "Final result";
+  const w = S.winner;
+  $("resulttable").innerHTML = "<tr><th>#</th><th>Player</th><th>Points</th><th>Credits left</th></tr>" +
+    w.ranking.map((r,i) => `<tr><td>${i+1}</td><td>${r.name}${i===0?" ★":""}</td><td>${r.score}</td><td>${r.credits}</td></tr>`).join("");
+  $("bidbox").classList.add("hidden");
+  notice("Winner: " + w.name + " with " + w.score + " points. Open a new table to play again.");
+  $("start").classList.add("hidden");
+}
+
+async function poll(){
+  if(!code) return;
+  try{
+    S = await api("api/state?code=" + encodeURIComponent(code) + (key ? "&key=" + encodeURIComponent(key) : ""));
+    if(S.phase !== lastPhase){ chosen = null; lastPhase = S.phase; }
+    render();
+  }catch(e){ notice("Connection problem: " + e.message); }
+}
+
+async function act(fn){
+  try{ await fn(); await poll(); }catch(e){ notice(e.message); }
+}
+
+$("create").onclick = () => act(async () => {
+  const n = ($("name").value || "").trim();
+  if(!n){ $("name").focus(); throw new Error("Enter a name first."); }
+  const d = await api("api/new", {name:n});
+  code = d.code; key = d.key;
+  localStorage.setItem("fb_code", code); localStorage.setItem("fb_key", key);
+  location.hash = code;
+  showTable(true); lastPhase = "";
+});
+
+$("join").onclick = () => act(async () => {
+  const n = ($("name").value || "").trim();
+  const c = ($("code").value || "").trim().toUpperCase();
+  if(!n || c.length !== 4) throw new Error("Name and 4-letter code required.");
+  const d = await api("api/join", {code:c, name:n});
+  code = d.code; key = d.key;
+  localStorage.setItem("fb_code", code); localStorage.setItem("fb_key", key);
+  showTable(true); lastPhase = "";
+});
+
+$("start").onclick = () => act(async () => { await api("api/start", {code, key}); });
+
+$("submit").onclick = () => act(async () => {
+  if(chosen === null) return;
+  const d = await api("api/bid", {code, key, bid:chosen});
+  if(d.state) S = d.state;
+  chosen = null;
+});
+
+$("share").onclick = async () => {
+  const url = location.origin + location.pathname + "#" + code;
+  try{ await navigator.clipboard.writeText(url); $("share").textContent = "Copied"; }
+  catch(e){ prompt("Copy this link", url); }
+};
+
+(async () => {
+  try{ const r = await api("api/rules"); $("rules").textContent = r.rules; }catch(e){}
+  const h = (location.hash || "").replace("#","").toUpperCase();
+  if(h && h.length === 4){ code = h; localStorage.setItem("fb_code", code); }
+  const c = (new URLSearchParams(location.search)).get("code");
+  if(c) code = c.toUpperCase();
+  if(code){ showTable(true); await poll(); }
+  setInterval(poll, 1200);
+})();
+</script>
+</body>
+</html>
